@@ -1,0 +1,112 @@
+services:
+  # PostgreSQL - Main database
+  postgres:
+    image: postgres:15-alpine
+    container_name: logic-arena-db
+    environment:
+      POSTGRES_USER: arena_user
+      POSTGRES_PASSWORD: arena_pass_dev
+      POSTGRES_DB: logic_arena
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arena_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Cache, sessions, queue
+  redis:
+    image: redis:7-alpine
+    container_name: logic-arena-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB - Logs and analytics
+  mongo:
+    image: mongo:7
+    container_name: logic-arena-mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: arena_admin
+      MONGO_INITDB_ROOT_PASSWORD: arena_pass_dev
+      MONGO_INITDB_DATABASE: arena_analytics
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Code Executor Service
+  code-executor:
+    build:
+      context: ./services/code-executor
+      dockerfile: Dockerfile
+    container_name: logic-arena-executor
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://arena_user:arena_pass_dev@postgres:5432/logic_arena
+      DOCKER_HOST: unix:///var/run/docker.sock
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+      EXECUTION_TIMEOUT: 5000
+      MAX_EXECUTION_TIMEOUT: 30000
+      MEMORY_LIMIT_MB: 128
+      MAX_MEMORY_LIMIT_MB: 512
+      CPU_LIMIT: 0.5
+      MAX_CPU_LIMIT: 1.0
+      MAX_CONCURRENT_EXECUTIONS: 10
+    ports:
+      - "3002:3002"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for code execution
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Frontend Web Application
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: logic-arena-web
+    ports:
+      - "5173:80"
+    depends_on:
+      - code-executor
+    restart: unless-stopped
+
+  # API Gateway (Future)
+  # api-gateway:
+  #   build: ./services/api-gateway
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - code-executor
+
+volumes:
+  postgres_data:
+  redis_data:
+  mongo_data:
+
+networks:
+  default:
+    name: logic-arena-network

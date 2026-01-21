@@ -1,0 +1,46 @@
+import winston from 'winston';
+
+const { combine, timestamp, printf, colorize, errors } = winston.format;
+
+const logFormat = printf(({ level, message, timestamp, stack, ...metadata }) => {
+  let msg = `${timestamp} [${level}]: ${message}`;
+  
+  // Add metadata if present
+  if (Object.keys(metadata).length > 0) {
+    msg += ` ${JSON.stringify(metadata)}`;
+  }
+  
+  // Add stack trace for errors
+  if (stack) {
+    msg += `\n${stack}`;
+  }
+  
+  return msg;
+});
+
+export function createLogger(service: string) {
+  return winston.createLogger({
+    level: process.env.LOG_LEVEL || 'info',
+    format: combine(
+      errors({ stack: true }),
+      timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+      logFormat
+    ),
+    defaultMeta: { service },
+    transports: [
+      new winston.transports.Console({
+        format: combine(
+          colorize(),
+          logFormat
+        )
+      }),
+      // Add file transport for production
+      ...(process.env.NODE_ENV === 'production'
+        ? [
+            new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
+            new winston.transports.File({ filename: 'logs/combined.log' })
+          ]
+        : [])
+    ]
+  });
+}
