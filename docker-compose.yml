@@ -57,6 +57,8 @@ services:
       context: ./services/code-executor
       dockerfile: Dockerfile
     container_name: logic-arena-executor
+    env_file:
+      - ./services/code-executor/.env
     environment:
       NODE_ENV: production
       PORT: 3002
@@ -82,17 +84,17 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Frontend Web Application
-  web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-    container_name: logic-arena-web
-    ports:
-      - "5173:80"
-    depends_on:
-      - code-executor
-    restart: unless-stopped
+  # Frontend Web Application - Disabled, using Vite dev server on port 5173
+  # web:
+  #   build:
+  #     context: ./web
+  #     dockerfile: Dockerfile
+  #   container_name: logic-arena-web
+  #   ports:
+  #     - "80:80"
+  #   depends_on:
+  #     - code-executor
+  #   restart: unless-stopped
 
   # API Gateway (Future)
   # api-gateway:

@@ -4,9 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CodeEditor } from "./CodeEditor";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Users, Radio, Loader2, Play } from "lucide-react";
+import { ArrowLeft, Users, Radio } from "lucide-react";
 import { PROBLEMS } from "@/data/problems";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface CollaborationProps {
   onBack: () => void;
@@ -22,46 +21,6 @@ export function Collaboration({ onBack, user }: CollaborationProps) {
     { id: "2", username: "alice_coder", isActive: false },
     { id: "3", username: "bob_dev", isActive: false },
   ]);
-  const [output, setOutput] = useState("");
-  const [isRunning, setIsRunning] = useState(false);
-
-  const handleRun = async () => {
-    setIsRunning(true);
-    setOutput("Running...");
-    try {
-      const testInput = problem.testCases[0]?.input || "";
-      let executableCode = code;
-      if (language === "java") {
-        executableCode = `
-import java.util.*;
-
-${code}
-
-public class Main {
-    public static void main(String[] args) {
-        Scanner sc = new Scanner(System.in);
-        Solution solution = new Solution();
-        System.out.println("OK");
-    }
-}`;
-      }
-      const response = await fetch('/api/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ language, code: executableCode, input: testInput, timeLimit: 5000, memoryLimit: 256 })
-      });
-      const result = await response.json();
-      if (result.status === 'success') {
-        setOutput(result.output || '(No output)');
-      } else {
-        setOutput(`Error: ${result.error || result.stderr || 'Execution failed'}`);
-      }
-    } catch (e: any) {
-      setOutput(`Failed to connect: ${e.message}`);
-    } finally {
-      setIsRunning(false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 p-4">
@@ -129,32 +88,8 @@ public class Main {
                 />
               </div>
               <div className="mt-4 flex gap-2">
-                <Button className="flex-1" variant="outline" onClick={handleRun} disabled={isRunning}>
-                  {isRunning ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Running...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="h-4 w-4 mr-2" />
-                      Run Code
-                    </>
-                  )}
-                </Button>
+                <Button className="flex-1">Run Code</Button>
                 <Button className="flex-1" variant="outline">Share Session</Button>
-              </div>
-              <div className="mt-3">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm">Output</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ScrollArea className="h-32 border rounded p-3">
-                      <pre className="text-sm font-mono whitespace-pre-wrap">{output || 'Run to see output...'}</pre>
-                    </ScrollArea>
-                  </CardContent>
-                </Card>
               </div>
             </CardContent>
           </Card>

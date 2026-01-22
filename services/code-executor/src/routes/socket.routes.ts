@@ -152,6 +152,133 @@ export function initializeSocketIO(httpServer: HTTPServer) {
       socket.to(roomId).emit('chat-message', message);
     });
 
+    // Code execution result sharing
+    socket.on('code-run', ({ roomId, userId, output }) => {
+      socket.to(roomId).emit('code-run', { output, userId });
+    });
+
+    socket.on('code-submit', ({ roomId, userId, result, output }) => {
+      socket.to(roomId).emit('code-submit', { result, output, userId });
+    });
+
+    // WebRTC signaling handlers
+    socket.on('offer', ({ roomId, toUserId, offer }) => {
+      const user = socketUsers.get(socket.id);
+      if (!user || !user.roomId || user.roomId !== roomId) return;
+      
+      // Find target user's socket
+      const targetSocket = Array.from(socketUsers.entries()).find(
+        ([_, u]) => u.userId === toUserId && u.roomId === roomId
+      )?.[0];
+      
+      if (targetSocket) {
+        io.to(targetSocket).emit('offer', {
+          offer,
+          fromUserId: user.userId
+        });
+      }
+    });
+
+    socket.on('answer', ({ roomId, toUserId, answer }) => {
+      const user = socketUsers.get(socket.id);
+      if (!user || !user.roomId || user.roomId !== roomId) return;
+      
+      const targetSocket = Array.from(socketUsers.entries()).find(
+        ([_, u]) => u.userId === toUserId && u.roomId === roomId
+      )?.[0];
+      
+      if (targetSocket) {
+        io.to(targetSocket).emit('answer', {
+          answer,
+          fromUserId: user.userId
+        });
+      }
+    });
+
+    socket.on('ice-candidate', ({ roomId, toUserId, candidate }) => {
+      const user = socketUsers.get(socket.id);
+      if (!user || !user.roomId || user.roomId !== roomId) return;
+      
+      const targetSocket = Array.from(socketUsers.entries()).find(
+        ([_, u]) => u.userId === toUserId && u.roomId === roomId
+      )?.[0];
+      
+      if (targetSocket) {
+        io.to(targetSocket).emit('ice-candidate', {
+          candidate,
+          fromUserId: user.userId
+        });
+      }
+    });
+
+    socket.on('media-toggle', ({ roomId, userId, type, enabled }) => {
+      const user = socketUsers.get(socket.id);
+      if (!user || !user.roomId || user.roomId !== roomId) return;
+      
+      // Broadcast to other participants in room
+      socket.to(roomId).emit('media-toggle', {
+        userId,
+        type,
+        enabled
+      });
+    });
+
+    // Call request system
+    socket.on('call-request', ({ roomId, fromUserId, fromUsername }) => {
+      const user = socketUsers.get(socket.id);
+      if (!user || !user.roomId || user.roomId !== roomId) return;
+      
+      // Send call request to all other participants in room
+      socket.to(roomId).emit('call-request', {
+        fromUserId,
+        fromUsername
+      });
+      
+      console.log(`Call request from ${fromUsername} (${fromUserId}) in room ${roomId}`);
+    });
+
+    socket.on('call-accept', ({ roomId, fromUserId }) => {
+      const user = socketUsers.get(socket.id);
+      if (!user || !user.roomId || user.roomId !== roomId) return;
+      
+      // Find the caller's socket
+      const callerSocket = Array.from(socketUsers.entries()).find(
+        ([_, u]) => u.userId === fromUserId && u.roomId === roomId
+      )?.[0];
+      
+      if (callerSocket) {
+        // Notify the caller that call was accepted
+        io.to(callerSocket).emit('call-accepted', {
+          byUserId: user.userId,
+          byUsername: user.username
+        });
+        // Also notify the accepter that call is active (so both sides activate)
+        socket.emit('call-accepted', {
+          byUserId: user.userId,
+          byUsername: user.username
+        });
+        console.log(`Call accepted by ${user.username} (${user.userId}) for ${fromUserId}`);
+      }
+    });
+
+    socket.on('call-reject', ({ roomId, fromUserId }) => {
+      const user = socketUsers.get(socket.id);
+      if (!user || !user.roomId || user.roomId !== roomId) return;
+      
+      // Find the caller's socket
+      const callerSocket = Array.from(socketUsers.entries()).find(
+        ([_, u]) => u.userId === fromUserId && u.roomId === roomId
+      )?.[0];
+      
+      if (callerSocket) {
+        io.to(callerSocket).emit('call-rejected', {
+          byUserId: user.userId,
+          byUsername: user.username
+        });
+        console.log(`Call rejected by ${user.username} (${user.userId}) for ${fromUserId}`);
+      }
+    });
+
     socket.on('disconnect', () => {
       console.log('User disconnected:', socket.id);
       

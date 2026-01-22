@@ -5,9 +5,11 @@ import helmet from 'helmet';
 import { createLogger } from './utils/logger';
 import { executionRouter } from './routes/execution.routes';
 import { healthRouter } from './routes/health.routes';
+import { userRouter } from './routes/user.routes';
 import { errorHandler } from './middleware/error.middleware';
 import { initializeQueue } from './queue/execution.queue';
 import { testDatabaseConnection } from './database';
+import { testSupabaseConnection } from './database/supabase';
 import { config } from './config';
 import { initializeSocketIO } from './routes/socket.routes';
 
@@ -40,15 +42,23 @@ async function startServer() {
   // Routes
   app.use('/api/health', healthRouter);
   app.use('/api/execute', executionRouter);
+  app.use('/api/users', userRouter);
 
   // Error handling
   app.use(errorHandler);
 
-  // Test database connection (optional - won't fail if DB not configured)
+  // Test database connections (optional - won't fail if DB not configured)
   if (config.database.url) {
     await testDatabaseConnection();
   } else {
-    logger.warn('Database not configured - submissions will not be saved');
+    logger.warn('PostgreSQL not configured - submissions will not be saved');
+  }
+
+  // Test Supabase connection
+  if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
+    await testSupabaseConnection();
+  } else {
+    logger.warn('Supabase not configured - user features will not work');
   }
 
   // Initialize queue workers (optional - skip if Redis not available)

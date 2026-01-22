@@ -8,6 +8,7 @@ import { Profile } from './components/Profile'
 import { Duel } from './components/Duel'
 import { Collaboration } from './components/Collaboration'
 import { PairProgramming } from './components/PairProgramming'
+import { Layout } from './components/Layout'
 
 type Page = 'login' | 'register' | 'dashboard' | 'problems' | 'problem-view' | 'profile' | 'duel' | 'collaboration' | 'pair-programming';
 
@@ -53,11 +54,11 @@ function App() {
     return <Login onLogin={handleLogin} onSwitchToRegister={() => setCurrentPage('register')} />;
   }
 
-  // Authenticated - render pages
+  // Authenticated - render pages with Layout
   return (
-    <div className="min-h-screen">
+    <Layout user={user} currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout}>
       {currentPage === 'dashboard' && <Dashboard onNavigate={handleNavigate} user={user} />}
-      {currentPage === 'problems' && <ProblemList onSelectProblem={handleSelectProblem} />}
+      {currentPage === 'problems' && <ProblemList onSelectProblem={handleSelectProblem} onBack={() => handleNavigate('dashboard')} />}
       {currentPage === 'problem-view' && selectedProblem && (
         <ProblemView problemId={selectedProblem} onBack={handleBackToProblems} />
       )}
@@ -65,7 +66,7 @@ function App() {
       {currentPage === 'duel' && <Duel onBack={() => setCurrentPage('dashboard')} user={user} />}
       {currentPage === 'collaboration' && <Collaboration onBack={() => setCurrentPage('dashboard')} user={user} />}
       {currentPage === 'pair-programming' && <PairProgramming onBack={() => setCurrentPage('dashboard')} user={user} />}
-    </div>
+    </Layout>
   )
 }
 

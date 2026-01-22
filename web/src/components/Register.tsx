@@ -16,28 +16,56 @@ export function Register({ onRegister, onSwitchToLogin }: RegisterProps) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
+  const [loading, setLoading] = useState(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password !== confirmPassword) {
       alert("Passwords do not match!");
       return;
     }
-    // Mock register - replace with actual API call
-    const mockUser = {
-      id: Date.now().toString(),
-      username: username,
-      email: email,
-      fullName: username,
-      avatar: "",
-      rating: 1200,
-      friends: [],
-      platforms: {
-        leetcode: "",
-        codeforces: "",
-        codechef: ""
+    
+    setLoading(true);
+    try {
+      // Create user in Supabase
+      const response = await fetch('http://localhost:3002/api/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username,
+          email,
+          rating: 1200
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        onRegister({
+          id: data.user.id,
+          username: data.user.username,
+          email: data.user.email,
+          fullName: data.user.full_name || data.user.username,
+          avatar: data.user.avatar_url || "",
+          rating: data.user.rating || 1200,
+          friends: [],
+          platforms: {
+            leetcode: "",
+            codeforces: "",
+            codechef: ""
+          }
+        });
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Registration failed');
       }
-    };
-    onRegister(mockUser);
+    } catch (error) {
+      console.error('Registration error:', error);
+      alert('Registration failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -118,8 +146,8 @@ export function Register({ onRegister, onSwitchToLogin }: RegisterProps) {
                 />
               </div>
             </div>
-            <Button type="submit" className="w-full" size="lg">
-              Create Account
+            <Button type="submit" className="w-full" size="lg" disabled={loading}>
+              {loading ? "Creating account..." : "Create Account"}
             </Button>
             <div className="relative">
               <div className="absolute inset-0 flex items-center">

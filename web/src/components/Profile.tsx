@@ -4,8 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { User, Trophy, Users, Link2, Plus, X, Check, ArrowLeft, Search } from "lucide-react";
-import { useState } from "react";
+import { User, Trophy, Users, Link2, Plus, X, Check, ArrowLeft, Search, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
 
 interface ProfileProps {
   user: any;
@@ -14,13 +14,8 @@ interface ProfileProps {
 }
 
 export function Profile({ user, onLogout, onBack }: ProfileProps) {
-  const [friends, setFriends] = useState([
-    { id: "2", username: "alice_coder", rating: 1650, avatar: "" },
-    { id: "3", username: "bob_dev", rating: 1420, avatar: "" },
-  ]);
-  const [friendRequests, setFriendRequests] = useState([
-    { id: "4", username: "charlie_hacker", rating: 1580, avatar: "" },
-  ]);
+  const [friends, setFriends] = useState<any[]>([]);
+  const [friendRequests, setFriendRequests] = useState<any[]>([]);
   const [platforms, setPlatforms] = useState(user.platforms || {
     leetcode: "",
     codeforces: "",
@@ -29,47 +24,110 @@ export function Profile({ user, onLogout, onBack }: ProfileProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showSearch, setShowSearch] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
 
-  // Mock users database
-  const allUsers = [
-    { id: "2", username: "alice_coder", rating: 1650, avatar: "", isFriend: true },
-    { id: "3", username: "bob_dev", rating: 1420, avatar: "", isFriend: true },
-    { id: "5", username: "dave_pro", rating: 1900, avatar: "", isFriend: false },
-    { id: "6", username: "eve_master", rating: 2100, avatar: "", isFriend: false },
-    { id: "7", username: "frank_legend", rating: 2300, avatar: "", isFriend: false },
-    { id: "8", username: "grace_coder", rating: 1750, avatar: "", isFriend: false },
-  ];
+  // Load friends and friend requests on mount
+  useEffect(() => {
+    loadFriends();
+    loadFriendRequests();
+  }, [user.id]);
 
-  const handleSearch = (query: string) => {
+  const loadFriends = async () => {
+    try {
+      const response = await fetch(`http://localhost:3002/api/users/friends/${user.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setFriends(data.friends || []);
+      }
+    } catch (error) {
+      console.error('Error loading friends:', error);
+    }
+  };
+
+  const loadFriendRequests = async () => {
+    try {
+      const response = await fetch(`http://localhost:3002/api/users/friend-requests/${user.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        // Map incoming requests to the format we need
+        const incoming = (data.incoming || []).map((req: any) => ({
+          id: req.id,
+          username: req.from_user?.username || 'Unknown',
+          rating: req.from_user?.rating || 0,
+          avatar: req.from_user?.avatar_url || '',
+          requestId: req.id
+        }));
+        setFriendRequests(incoming);
+      }
+    } catch (error) {
+      console.error('Error loading friend requests:', error);
+    }
+  };
+
+  const handleSearch = async (query: string) => {
     setSearchQuery(query);
     if (query.trim().length > 0) {
-      const filtered = allUsers.filter(u => 
-        u.username.toLowerCase().includes(query.toLowerCase()) && 
-        u.id !== user.id &&
-        !friends.find(f => f.id === u.id) &&
-        !friendRequests.find(fr => fr.id === u.id)
-      );
-      setSearchResults(filtered);
-      setShowSearch(true);
+      setSearchLoading(true);
+      try {
+        const response = await fetch(
+          `http://localhost:3002/api/users/search?query=${encodeURIComponent(query)}&currentUserId=${user.id}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          // Backend already filters out friends, but filter out pending requests
+          const requestIds = new Set(friendRequests.map(fr => fr.requestId || fr.id));
+          const filtered = (data.users || []).filter((u: any) => 
+            !requestIds.has(u.id)
+          );
+          setSearchResults(filtered);
+          setShowSearch(true);
+        } else {
+          setSearchResults([]);
+        }
+      } catch (error) {
+        console.error('Error searching users:', error);
+        setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
     } else {
       setSearchResults([]);
       setShowSearch(false);
     }
   };
 
-  const handleAddFriend = (userId: string) => {
-    const userToAdd = allUsers.find(u => u.id === userId);
-    if (userToAdd) {
-      // In real app, this would send a friend request to backend
-      setFriendRequests([...friendRequests, { 
-        id: userToAdd.id, 
-        username: userToAdd.username, 
-        rating: userToAdd.rating, 
-        avatar: "" 
-      }]);
-      setSearchQuery("");
-      setSearchResults([]);
-      setShowSearch(false);
+  const handleAddFriend = async (userId: string) => {
+    setLoading(true);
+    try {
+      const response = await fetch('http://localhost:3002/api/users/friend-request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fromUserId: user.id,
+          toUserId: userId
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        alert('Friend request sent successfully!');
+        setSearchQuery("");
+        setSearchResults([]);
+        setShowSearch(false);
+        // Reload friend requests to show outgoing request
+        loadFriendRequests();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to send friend request');
+      }
+    } catch (error) {
+      console.error('Error sending friend request:', error);
+      alert('Failed to send friend request. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -90,9 +148,8 @@ export function Profile({ user, onLogout, onBack }: ProfileProps) {
       codechef: 1750
     };
     
-    // Save to backend - mock for now
+    // TODO: Save to backend via API
     console.log(`Connecting ${platform} with username: ${username}`);
-    // In real app: await fetch('/api/user/platforms', { method: 'POST', body: JSON.stringify(platforms) });
     
     // Store platform rating
     const updatedPlatforms = {
@@ -105,32 +162,109 @@ export function Profile({ user, onLogout, onBack }: ProfileProps) {
     alert(`${platform} connected successfully! Rating: ${mockRatings[platform] || 'N/A'}`);
   };
 
-  const handleAcceptRequest = (requestId: string) => {
-    const request = friendRequests.find(r => r.id === requestId);
-    if (request) {
-      setFriends([...friends, request]);
-      setFriendRequests(friendRequests.filter(r => r.id !== requestId));
+  const handleAcceptRequest = async (requestId: string) => {
+    setLoading(true);
+    try {
+      const response = await fetch('http://localhost:3002/api/users/friend-request/accept', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requestId,
+          userId: user.id
+        })
+      });
+
+      if (response.ok) {
+        const request = friendRequests.find(r => r.requestId === requestId);
+        if (request) {
+          setFriends([...friends, {
+            id: request.id,
+            username: request.username,
+            rating: request.rating,
+            avatar: request.avatar
+          }]);
+        }
+        setFriendRequests(friendRequests.filter(r => r.requestId !== requestId));
+        alert('Friend request accepted!');
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to accept friend request');
+      }
+    } catch (error) {
+      console.error('Error accepting friend request:', error);
+      alert('Failed to accept friend request. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleRemoveFriend = (friendId: string) => {
-    setFriends(friends.filter(f => f.id !== friendId));
+  const handleRemoveFriend = async (friendId: string) => {
+    if (!confirm('Are you sure you want to remove this friend?')) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch(`http://localhost:3002/api/users/friends/${user.id}/${friendId}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        setFriends(friends.filter(f => f.id !== friendId));
+        alert('Friend removed successfully');
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to remove friend');
+      }
+    } catch (error) {
+      console.error('Error removing friend:', error);
+      alert('Failed to remove friend. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleRejectRequest = (requestId: string) => {
-    setFriendRequests(friendRequests.filter(r => r.id !== requestId));
+  const handleRejectRequest = async (requestId: string) => {
+    setLoading(true);
+    try {
+      const response = await fetch('http://localhost:3002/api/users/friend-request/reject', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requestId,
+          userId: user.id
+        })
+      });
+
+      if (response.ok) {
+        setFriendRequests(friendRequests.filter(r => r.requestId !== requestId));
+        alert('Friend request rejected');
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to reject friend request');
+      }
+    } catch (error) {
+      console.error('Error rejecting friend request:', error);
+      alert('Failed to reject friend request. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 p-4 md:p-6 lg:p-8">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
+      <div className="container mx-auto px-4 py-8 space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button variant="ghost" onClick={onBack || (() => window.history.back())}>
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back
             </Button>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+            <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-primary via-purple-600 to-primary bg-clip-text text-transparent">
               Profile
             </h1>
           </div>
@@ -140,7 +274,7 @@ export function Profile({ user, onLogout, onBack }: ProfileProps) {
         </div>
 
         <div className="grid md:grid-cols-3 gap-6">
-          <Card className="md:col-span-1">
+          <Card className="md:col-span-1 border-2">
             <CardHeader>
               <div className="flex flex-col items-center space-y-4">
                 <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center">
@@ -152,13 +286,13 @@ export function Profile({ user, onLogout, onBack }: ProfileProps) {
                 </div>
                 <Badge variant="default" className="text-lg px-4 py-1">
                   <Trophy className="h-4 w-4 mr-2" />
-                  Rating: {user.rating}
+                  Rating: {user.rating || 1200}
                 </Badge>
               </div>
             </CardHeader>
           </Card>
 
-          <Card className="md:col-span-2">
+          <Card className="md:col-span-2 border-2">
             <Tabs defaultValue="platforms" className="w-full">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="platforms">Platforms</TabsTrigger>
@@ -291,7 +425,11 @@ export function Profile({ user, onLogout, onBack }: ProfileProps) {
                             value={searchQuery}
                             onChange={(e) => handleSearch(e.target.value)}
                             className="pl-10"
+                            disabled={searchLoading}
                           />
+                          {searchLoading && (
+                            <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                          )}
                         </div>
                         {searchResults.length > 0 && (
                           <div className="border rounded-lg divide-y">
@@ -303,18 +441,28 @@ export function Profile({ user, onLogout, onBack }: ProfileProps) {
                                   </div>
                                   <div>
                                     <p className="font-semibold">{result.username}</p>
-                                    <p className="text-sm text-muted-foreground">Rating: {result.rating}</p>
+                                    <p className="text-sm text-muted-foreground">Rating: {result.rating || 1200}</p>
                                   </div>
                                 </div>
-                                <Button size="sm" onClick={() => handleAddFriend(result.id)}>
-                                  <Plus className="h-4 w-4 mr-2" />
-                                  Add Friend
+                                <Button 
+                                  size="sm" 
+                                  onClick={() => handleAddFriend(result.id)}
+                                  disabled={loading}
+                                >
+                                  {loading ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <>
+                                      <Plus className="h-4 w-4 mr-2" />
+                                      Add Friend
+                                    </>
+                                  )}
                                 </Button>
                               </div>
                             ))}
                           </div>
                         )}
-                        {searchQuery && searchResults.length === 0 && (
+                        {searchQuery && searchResults.length === 0 && !searchLoading && (
                           <p className="text-sm text-muted-foreground text-center py-4">No users found</p>
                         )}
                       </div>
@@ -331,12 +479,23 @@ export function Profile({ user, onLogout, onBack }: ProfileProps) {
                               </div>
                               <div>
                                 <p className="font-semibold">{friend.username}</p>
-                                <p className="text-sm text-muted-foreground">Rating: {friend.rating}</p>
+                                <p className="text-sm text-muted-foreground">Rating: {friend.rating || 1200}</p>
                               </div>
                             </div>
-                            <Button variant="outline" size="sm" onClick={() => handleRemoveFriend(friend.id)}>
-                              <X className="h-4 w-4 mr-2" />
-                              Remove
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              onClick={() => handleRemoveFriend(friend.id)}
+                              disabled={loading}
+                            >
+                              {loading ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <X className="h-4 w-4 mr-2" />
+                                  Remove
+                                </>
+                              )}
                             </Button>
                           </div>
                         ))
@@ -353,28 +512,51 @@ export function Profile({ user, onLogout, onBack }: ProfileProps) {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
-                      {friendRequests.map((request) => (
-                        <div key={request.id} className="flex items-center justify-between p-3 border rounded-lg">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                              <User className="h-5 w-5 text-primary" />
+                      {friendRequests.length === 0 ? (
+                        <p className="text-center text-muted-foreground py-8">No pending friend requests</p>
+                      ) : (
+                        friendRequests.map((request) => (
+                          <div key={request.requestId} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                                <User className="h-5 w-5 text-primary" />
+                              </div>
+                              <div>
+                                <p className="font-semibold">{request.username}</p>
+                                <p className="text-sm text-muted-foreground">Rating: {request.rating || 1200}</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="font-semibold">{request.username}</p>
-                              <p className="text-sm text-muted-foreground">Rating: {request.rating}</p>
+                            <div className="flex gap-2">
+                              <Button 
+                                size="sm" 
+                                onClick={() => handleAcceptRequest(request.requestId)}
+                                disabled={loading}
+                              >
+                                {loading ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <>
+                                    <Check className="h-4 w-4 mr-2" />
+                                    Accept
+                                  </>
+                                )}
+                              </Button>
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={() => handleRejectRequest(request.requestId)}
+                                disabled={loading}
+                              >
+                                {loading ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <X className="h-4 w-4" />
+                                )}
+                              </Button>
                             </div>
                           </div>
-                          <div className="flex gap-2">
-                            <Button size="sm" onClick={() => handleAcceptRequest(request.id)}>
-                              <Check className="h-4 w-4 mr-2" />
-                              Accept
-                            </Button>
-                            <Button variant="outline" size="sm" onClick={() => handleRejectRequest(request.id)}>
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
+                        ))
+                      )}
                     </div>
                   </CardContent>
                 </Card>
