@@ -152,6 +152,19 @@ CREATE TABLE IF NOT EXISTS anti_cheat_logs (
   timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Platform connections
+CREATE TABLE IF NOT EXISTS platform_connections (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  platform VARCHAR(20) NOT NULL, -- leetcode, codeforces, codechef
+  username VARCHAR(100) NOT NULL,
+  rating INTEGER,
+  last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, platform)
+);
+
+CREATE INDEX idx_platform_connections_user_id ON platform_connections(user_id);
+
 -- Create indexes for performance
 CREATE INDEX idx_submissions_user_id ON submissions(user_id);
 CREATE INDEX idx_submissions_problem_id ON submissions(problem_id);

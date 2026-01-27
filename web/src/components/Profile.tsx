@@ -26,12 +26,30 @@ export function Profile({ user, onLogout, onBack }: ProfileProps) {
   const [showSearch, setShowSearch] = useState(false);
   const [loading, setLoading] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
 
-  // Load friends and friend requests on mount
+  // Load friends, friend requests, and platform connections on mount
   useEffect(() => {
     loadFriends();
     loadFriendRequests();
+    loadPlatformConnections();
   }, [user.id]);
+
+  const loadPlatformConnections = async () => {
+    try {
+      const response = await fetch(`http://localhost:3002/api/users/platforms/${user.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setPlatforms(data.platforms || {
+          leetcode: "",
+          codeforces: "",
+          codechef: ""
+        });
+      }
+    } catch (error) {
+      console.error('Error loading platform connections:', error);
+    }
+  };
 
   const loadFriends = async () => {
     try {
@@ -141,25 +159,56 @@ export function Profile({ user, onLogout, onBack }: ProfileProps) {
       alert(`Please enter your ${platform} username first`);
       return;
     }
-    // Mock platform ratings - in real app, fetch from platform APIs
-    const mockRatings: Record<string, number> = {
-      leetcode: 1850,
-      codeforces: 1650,
-      codechef: 1750
-    };
     
-    // TODO: Save to backend via API
-    console.log(`Connecting ${platform} with username: ${username}`);
-    
-    // Store platform rating
-    const updatedPlatforms = {
-      ...platforms,
-      [`${platform}_rating`]: mockRatings[platform] || 0,
-      [`${platform}_connected`]: true
-    };
-    setPlatforms(updatedPlatforms);
-    
-    alert(`${platform} connected successfully! Rating: ${mockRatings[platform] || 'N/A'}`);
+    // Set loading state only for this specific platform
+    setConnectingPlatform(platform);
+    try {
+      const response = await fetch('http://localhost:3002/api/users/platforms/connect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          platform,
+          username: username.trim()
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const updatedPlatforms = {
+          ...platforms,
+          [platform]: username.trim(),
+          [`${platform}_rating`]: data.rating,
+          [`${platform}_connected`]: true
+        };
+        setPlatforms(updatedPlatforms);
+        alert(`${platform} connected successfully! Rating: ${data.rating || 'N/A'}`);
+      } else {
+        // Try to get error message from response
+        let errorMessage = `Failed to connect ${platform}.`;
+        try {
+          const error = await response.json();
+          errorMessage = error.error || error.details || errorMessage;
+          if (error.solution) {
+            errorMessage += `\n\nSolution: ${error.solution}`;
+          }
+          console.error('Backend error:', error);
+        } catch (e) {
+          // If response is not JSON, get text
+          const text = await response.text();
+          errorMessage = text || errorMessage;
+          console.error('Backend error (non-JSON):', text);
+        }
+        alert(errorMessage);
+      }
+    } catch (error) {
+      console.error(`Error connecting ${platform}:`, error);
+      alert(`Failed to connect ${platform}. Please check your connection and try again.`);
+    } finally {
+      setConnectingPlatform(null);
+    }
   };
 
   const handleAcceptRequest = async (requestId: string) => {
@@ -317,9 +366,9 @@ export function Profile({ user, onLogout, onBack }: ProfileProps) {
                           value={platforms.leetcode || ''}
                           onChange={(e) => handlePlatformInputChange('leetcode', e.target.value)}
                         />
-                        <Button onClick={() => handleConnect('leetcode')}>
+                        <Button onClick={() => handleConnect('leetcode')} disabled={connectingPlatform !== null}>
                           <Link2 className="h-4 w-4 mr-2" />
-                          {platforms.leetcode_connected ? 'Update' : 'Connect'}
+                          {connectingPlatform === 'leetcode' ? 'Connecting...' : (platforms.leetcode_connected ? 'Update' : 'Connect')}
                         </Button>
                       </div>
                       {platforms.leetcode_connected && platforms.leetcode_rating && (
@@ -337,9 +386,9 @@ export function Profile({ user, onLogout, onBack }: ProfileProps) {
                           value={platforms.codeforces || ''}
                           onChange={(e) => handlePlatformInputChange('codeforces', e.target.value)}
                         />
-                        <Button onClick={() => handleConnect('codeforces')}>
+                        <Button onClick={() => handleConnect('codeforces')} disabled={connectingPlatform !== null}>
                           <Link2 className="h-4 w-4 mr-2" />
-                          {platforms.codeforces_connected ? 'Update' : 'Connect'}
+                          {connectingPlatform === 'codeforces' ? 'Connecting...' : (platforms.codeforces_connected ? 'Update' : 'Connect')}
                         </Button>
                       </div>
                       {platforms.codeforces_connected && platforms.codeforces_rating && (
@@ -357,9 +406,9 @@ export function Profile({ user, onLogout, onBack }: ProfileProps) {
                           value={platforms.codechef || ''}
                           onChange={(e) => handlePlatformInputChange('codechef', e.target.value)}
                         />
-                        <Button onClick={() => handleConnect('codechef')}>
+                        <Button onClick={() => handleConnect('codechef')} disabled={connectingPlatform !== null}>
                           <Link2 className="h-4 w-4 mr-2" />
-                          {platforms.codechef_connected ? 'Update' : 'Connect'}
+                          {connectingPlatform === 'codechef' ? 'Connecting...' : (platforms.codechef_connected ? 'Update' : 'Connect')}
                         </Button>
                       </div>
                       {platforms.codechef_connected && platforms.codechef_rating && (
