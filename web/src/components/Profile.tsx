@@ -177,14 +177,35 @@ export function Profile({ user, onLogout, onBack }: ProfileProps) {
 
       if (response.ok) {
         const data = await response.json();
-        const updatedPlatforms = {
+        const updatedPlatforms: any = {
           ...platforms,
           [platform]: username.trim(),
           [`${platform}_rating`]: data.rating,
           [`${platform}_connected`]: true
         };
+
+        // If backend returned extra stats (like LeetCode total solved / ranking), store them
+        if (data.stats) {
+          if (platform === 'leetcode') {
+            updatedPlatforms.leetcode_total_solved = data.stats.totalSolved ?? null;
+            updatedPlatforms.leetcode_ranking = data.stats.ranking ?? null;
+            updatedPlatforms.leetcode_contest_rating = data.stats.contestRating ?? null;
+          }
+        }
+
         setPlatforms(updatedPlatforms);
-        alert(`${platform} connected successfully! Rating: ${data.rating || 'N/A'}`);
+
+        // Build a friendly success message
+        if (platform === 'leetcode' && data.stats) {
+          alert(
+            `LeetCode connected!\n\n` +
+            `Solved: ${data.stats.totalSolved ?? 'N/A'}\n` +
+            `Rank: ${data.stats.ranking ?? 'N/A'}\n` +
+            `Contest rating: ${data.stats.contestRating ?? 'N/A'}`
+          );
+        } else {
+          alert(`${platform} connected successfully! Rating: ${data.rating || 'N/A'}`);
+        }
       } else {
         // Try to get error message from response
         let errorMessage = `Failed to connect ${platform}.`;
@@ -371,10 +392,30 @@ export function Profile({ user, onLogout, onBack }: ProfileProps) {
                           {connectingPlatform === 'leetcode' ? 'Connecting...' : (platforms.leetcode_connected ? 'Update' : 'Connect')}
                         </Button>
                       </div>
-                      {platforms.leetcode_connected && platforms.leetcode_rating && (
-                        <div className="flex items-center gap-2 text-sm">
-                          <Trophy className="h-4 w-4 text-yellow-500" />
-                          <span>Rating: <strong>{platforms.leetcode_rating}</strong></span>
+
+                      {platforms.leetcode_connected && (
+                        <div className="mt-2 space-y-1 text-sm">
+                          {platforms.leetcode_total_solved && (
+                            <div className="flex items-center gap-2">
+                              <Trophy className="h-4 w-4 text-yellow-500" />
+                              <span>
+                                Solved:&nbsp;
+                                <strong>{platforms.leetcode_total_solved}</strong>
+                              </span>
+                            </div>
+                          )}
+                          {platforms.leetcode_ranking && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground">Rank:</span>
+                              <strong>{platforms.leetcode_ranking}</strong>
+                            </div>
+                          )}
+                          {platforms.leetcode_contest_rating && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground">Contest rating:</span>
+                              <strong>{platforms.leetcode_contest_rating}</strong>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

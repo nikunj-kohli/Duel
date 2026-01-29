@@ -525,7 +525,7 @@ router.post('/platforms/connect', async (req: Request, res: Response) => {
       });
     }
 
-    // Fetch rating from the platform
+    // Fetch rating / stats from the platform
     let ratingResult;
     try {
       ratingResult = await fetchPlatformRating(platform as 'leetcode' | 'codeforces' | 'codechef', username);
@@ -543,7 +543,7 @@ router.post('/platforms/connect', async (req: Request, res: Response) => {
       });
     }
 
-    // Upsert platform connection
+    // Upsert platform connection (we only persist \"rating\" for now, stats are returned in response)
     // First try to insert, if it fails due to conflict, update instead
     let existing;
     try {
@@ -648,7 +648,8 @@ router.post('/platforms/connect', async (req: Request, res: Response) => {
     res.json({ 
       success: true, 
       connection: data,
-      rating: ratingResult.rating 
+      rating: ratingResult.rating,
+      stats: ratingResult.stats || null,
     });
   } catch (error: any) {
     logger.error('Error connecting platform', error);

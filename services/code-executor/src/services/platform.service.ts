@@ -7,175 +7,80 @@ interface PlatformRating {
   rating: number | null;
   username: string;
   error?: string;
+  stats?: {
+    totalSolved?: number;
+    ranking?: number;
+    contestRating?: number | null;
+  };
 }
 
 /**
- * Fetch LeetCode rating using GraphQL API
- * LeetCode's GraphQL API is the most reliable method
+ * Fetch LeetCode rating using a stable public stats API.
+ *
+ * We use the unofficial `leetcode-stats-api` service:
+ *   https://leetcode-stats-api.herokuapp.com/{username}
+ *
+ * This returns JSON like:
+ * {
+ *   "status": "success",
+ *   "totalSolved": 620,
+ *   "ranking": 109479,
+ *   ...
+ * }
  */
 export async function fetchLeetCodeRating(username: string): Promise<PlatformRating> {
   try {
-    // Use the correct GraphQL query for LeetCode
-    const query = `
-      query userPublicProfile($username: String!) {
-        matchedUser(username: $username) {
-          username
-          profile {
-            ranking
-            reputation
-          }
-          submitStats {
-            acSubmissionNum {
-              difficulty
-              count
-              submissions
-            }
-            totalSubmissionNum {
-              difficulty
-              count
-              submissions
-            }
-          }
-        }
-      }
-    `;
+    const apiUrl = `https://leetcode-stats-api.herokuapp.com/${encodeURIComponent(username)}`;
 
-    // Try GraphQL API first (most reliable)
-    try {
-      const graphqlResponse = await axios.post(
-        'https://leetcode.com/graphql/',
-        {
-          query,
-          variables: { username },
-          operationName: 'userPublicProfile'
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': `https://leetcode.com/${username}/`,
-            'Origin': 'https://leetcode.com',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'x-csrftoken': '',
-            'Cookie': ''
-          },
-          timeout: 20000,
-          validateStatus: (status) => status < 500
-        }
-      );
+    const response = await axios.get(apiUrl, {
+      timeout: 15000,
+      validateStatus: (status) => status < 500,
+    });
 
-      // Check for GraphQL errors
-      if (graphqlResponse.data?.errors) {
-        const errorMsg = graphqlResponse.data.errors[0]?.message || 'User not found';
-        logger.error('LeetCode GraphQL error', { username, error: errorMsg });
-        return { rating: null, username, error: errorMsg };
-      }
-
-      const matchedUser = graphqlResponse.data?.data?.matchedUser;
-      
-      if (!matchedUser) {
-        return { rating: null, username, error: 'User not found' };
-      }
-
-      // Extract solved problems
-      const solvedProblems = matchedUser.submitStats?.acSubmissionNum?.find(
-        (stat: any) => stat.difficulty === 'All'
-      )?.count || 0;
-
-      const ranking = matchedUser.profile?.ranking || 0;
-      const reputation = matchedUser.profile?.reputation || 0;
-
-      // Calculate rating: base on solved problems + ranking + reputation
-      let rating = solvedProblems * 10;
-      
-      // Add ranking bonus (lower rank = better = higher score)
-      if (ranking > 0 && ranking < 100000) {
-        rating += Math.max(0, (100000 - ranking) / 10);
-      }
-      
-      // Add reputation bonus
-      if (reputation > 0) {
-        rating += reputation / 100;
-      }
-
-      // Cap at reasonable maximum
-      rating = Math.min(rating, 5000);
-
-      if (solvedProblems > 0 || rating > 0) {
-        return { rating: Math.round(rating), username };
-      }
-
-      return { rating: null, username, error: 'User profile found but no solved problems data available' };
-    } catch (graphqlError: any) {
-      logger.warn('GraphQL API failed, trying profile page scraping', { username, error: graphqlError.message });
-      
-      // Fallback to profile page scraping
-      try {
-        const profileUrl = `https://leetcode.com/${username}/`;
-        
-        const response = await axios.get(profileUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': 'https://leetcode.com/'
-          },
-          timeout: 15000,
-          validateStatus: (status) => status < 500
-        });
-
-        if (response.status === 404) {
-          return { rating: null, username, error: 'User not found' };
-        }
-
-        const html = response.data;
-        
-        // Try to extract from various patterns in HTML
-        const patterns = [
-          /"numSolved":\s*(\d+)/,
-          /"solved":\s*(\d+)/,
-          /(\d+)\s*problems?\s*(?:solved|completed)/i,
-          /solved[:\s]+(\d+)/i
-        ];
-
-        for (const pattern of patterns) {
-          const match = html.match(pattern);
-          if (match && match[1]) {
-            const solved = parseInt(match[1], 10);
-            if (solved > 0) {
-              const rating = Math.min(solved * 10, 5000);
-              return { rating: Math.round(rating), username };
-            }
-          }
-        }
-
-        return { rating: null, username, error: 'Could not extract data from profile page' };
-      } catch (scrapeError: any) {
-        logger.error('Profile scraping also failed', { username, error: scrapeError.message });
-        return { rating: null, username, error: 'Could not fetch LeetCode data. User may not exist or profile is private.' };
-      }
+    if (!response.data || response.data.status !== 'success') {
+      const message = response.data?.message || 'Unknown error from LeetCode stats API';
+      logger.error('LeetCode stats API error', { username, data: response.data });
+      return { rating: null, username, error: message };
     }
 
+    const stats = response.data;
+    const totalSolved = stats.totalSolved || 0;
+    const ranking = stats.ranking || 0;
+    // This API does not expose contest rating; keep it null for now
+    const contestRating = stats.contestRating ?? null;
+
+    if (totalSolved === 0) {
+      return {
+        rating: null,
+        username,
+        error: 'User has no solved problems or stats are unavailable',
+        stats: { totalSolved, ranking, contestRating },
+      };
+    }
+
+    // We no longer invent our own \"rating\" for LeetCode.
+    // Instead, we return the raw stats and leave rating null.
+    return {
+      rating: null,
+      username,
+      stats: {
+        totalSolved,
+        ranking,
+        contestRating,
+      },
+    };
   } catch (error: any) {
-    logger.error('Error fetching LeetCode rating', { username, error: error.message, code: error.code });
-    
-    // Handle timeout specifically
+    logger.error('Error fetching LeetCode rating via stats API', {
+      username,
+      error: error.message,
+      code: error.code,
+    });
+
     if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-      return { rating: null, username, error: 'Request timed out. LeetCode API is slow. Please try again in a moment.' };
+      return { rating: null, username, error: 'LeetCode stats service timed out. Please try again.' };
     }
-    
-    // Network errors
-    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-      return { rating: null, username, error: 'Cannot reach LeetCode. Please check your internet connection.' };
-    }
-    
-    // If it's a 404 or user not found
-    if (error.response?.status === 404 || error.response?.data?.errors) {
-      return { rating: null, username, error: 'User not found' };
-    }
-    
-    return { rating: null, username, error: error.message || 'Failed to fetch rating' };
+
+    return { rating: null, username, error: error.message || 'Failed to fetch rating from LeetCode stats API' };
   }
 }
 
